@@ -4,29 +4,62 @@ Author: Data Science Team
 Description: Comprehensive market analysis dashboard with ML models
 """
 
+# ============================================================================
+# IMPORTS WITH ERROR HANDLING
+# ============================================================================
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+import warnings
+warnings.filterwarnings('ignore')
+
+# Try importing visualization libraries
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    st.error("⚠️ Plotly not installed. Installing required packages...")
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly==5.18.0"])
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+
+try:
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    st.warning("⚠️ Matplotlib/Seaborn not available. Some visualizations may be limited.")
+
+# Machine learning imports
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.cluster import KMeans
 from sklearn.metrics import (accuracy_score, classification_report, confusion_matrix,
-                             silhouette_score, davies_bouldin_score, r2_score, mean_squared_error)
+                             silhouette_score, davies_bouldin_score, r2_score, 
+                             mean_squared_error, mean_absolute_error)
 from sklearn.decomposition import PCA
-from mlxtend.frequent_patterns import apriori, association_rules
-from mlxtend.preprocessing import TransactionEncoder
-import warnings
-warnings.filterwarnings('ignore')
 
-# Page configuration
+try:
+    from mlxtend.frequent_patterns import apriori, association_rules
+    from mlxtend.preprocessing import TransactionEncoder
+    MLXTEND_AVAILABLE = True
+except ImportError:
+    MLXTEND_AVAILABLE = False
+    st.warning("⚠️ MLxtend not available. Association rule mining will be limited.")
+
+# ============================================================================
+# PAGE CONFIGURATION
+# ============================================================================
 st.set_page_config(
     page_title="RefillHub Market Analysis",
     page_icon="🌱",
@@ -34,7 +67,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# ============================================================================
+# CUSTOM CSS STYLING
+# ============================================================================
 st.markdown("""
     <style>
     .main {
@@ -82,10 +117,16 @@ st.markdown("""
     .sidebar .sidebar-content {
         background-color: #e8f5e9;
     }
+    div[data-testid="stMetricValue"] {
+        font-size: 28px;
+        color: #2c5f2d;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# Title and description
+# ============================================================================
+# TITLE AND DESCRIPTION
+# ============================================================================
 st.markdown("<h1>🌱 RefillHub Market Analysis Dashboard</h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center; padding: 20px; background-color: white; border-radius: 10px; margin-bottom: 30px;'>
@@ -97,18 +138,23 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Load data function
+# ============================================================================
+# DATA LOADING FUNCTIONS
+# ============================================================================
 @st.cache_data
 def load_data():
     """Load the RefillHub survey data"""
     try:
         df = pd.read_csv('RefillHub_SyntheticSurvey.csv')
         return df
+    except FileNotFoundError:
+        st.error("❌ File 'RefillHub_SyntheticSurvey.csv' not found!")
+        st.info("Please upload your CSV file.")
+        return None
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None
 
-# Data preprocessing function
 @st.cache_data
 def preprocess_data(df):
     """Preprocess data for machine learning"""
@@ -125,23 +171,28 @@ def preprocess_data(df):
     
     return df_processed, le_dict
 
-# Load data
+# ============================================================================
+# LOAD DATA
+# ============================================================================
 df = load_data()
 
 if df is not None:
     df_processed, le_dict = preprocess_data(df)
     
-    # Sidebar navigation
-    st.sidebar.image("https://img.icons8.com/color/96/000000/leaf.png", width=100)
+    # ========================================================================
+    # SIDEBAR NAVIGATION
+    # ========================================================================
+    st.sidebar.title("🌱 RefillHub Analytics")
+    st.sidebar.markdown("---")
     st.sidebar.title("📊 Navigation")
     
     menu_options = [
         "🏠 Home & Overview",
         "📈 Exploratory Data Analysis",
         "🎯 Classification Models",
-        "🔍 Customer Segmentation (Clustering)",
+        "🔍 Customer Segmentation",
         "🔗 Association Rule Mining",
-        "💰 Willingness to Pay (Regression)",
+        "💰 Willingness to Pay",
         "📊 Interactive Insights",
         "🎯 Business Recommendations"
     ]
@@ -150,18 +201,18 @@ if df is not None:
     
     # Sidebar filters
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🔧 Filters")
+    st.sidebar.subheader("🔧 Data Filters")
     
     age_groups = st.sidebar.multiselect(
         "Age Group",
-        options=df['Age_Group'].unique(),
-        default=df['Age_Group'].unique()
+        options=sorted(df['Age_Group'].unique()),
+        default=sorted(df['Age_Group'].unique())
     )
     
     emirates = st.sidebar.multiselect(
         "Emirate",
-        options=df['Emirate'].unique(),
-        default=df['Emirate'].unique()
+        options=sorted(df['Emirate'].unique()),
+        default=sorted(df['Emirate'].unique())
     )
     
     # Apply filters
@@ -170,48 +221,32 @@ if df is not None:
         (df['Emirate'].isin(emirates))
     ]
     
-    # ============================================================================
+    st.sidebar.info(f"📊 Filtered Records: {len(df_filtered)}/{len(df)}")
+    
+    # ========================================================================
     # 1. HOME & OVERVIEW
-    # ============================================================================
+    # ========================================================================
     if choice == "🏠 Home & Overview":
         st.header("📊 Dataset Overview")
         
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.markdown("""
-            <div class='metric-card'>
-                <h2 style='color: #2c5f2d; text-align: center;'>{}</h2>
-                <p style='text-align: center; color: #666;'>Total Respondents</p>
-            </div>
-            """.format(len(df_filtered)), unsafe_allow_html=True)
+            st.metric("Total Respondents", len(df_filtered))
         
         with col2:
-            st.markdown("""
-            <div class='metric-card'>
-                <h2 style='color: #2c5f2d; text-align: center;'>{}</h2>
-                <p style='text-align: center; color: #666;'>Features</p>
-            </div>
-            """.format(len(df.columns)), unsafe_allow_html=True)
+            st.metric("Features", len(df.columns))
         
         with col3:
-            likely_users = len(df_filtered[df_filtered['Likely_to_Use_ReFillHub'] == 'Yes'])
-            percentage = (likely_users / len(df_filtered) * 100)
-            st.markdown("""
-            <div class='metric-card'>
-                <h2 style='color: #2c5f2d; text-align: center;'>{:.1f}%</h2>
-                <p style='text-align: center; color: #666;'>Likely Users</p>
-            </div>
-            """.format(percentage), unsafe_allow_html=True)
+            if 'Likely_to_Use_ReFillHub' in df_filtered.columns:
+                likely_users = len(df_filtered[df_filtered['Likely_to_Use_ReFillHub'] == 'Yes'])
+                percentage = (likely_users / len(df_filtered) * 100) if len(df_filtered) > 0 else 0
+                st.metric("Likely Users", f"{percentage:.1f}%")
         
         with col4:
-            avg_willingness = df_filtered['Willingness_to_Pay_AED'].mean()
-            st.markdown("""
-            <div class='metric-card'>
-                <h2 style='color: #2c5f2d; text-align: center;'>AED {:.2f}</h2>
-                <p style='text-align: center; color: #666;'>Avg Willingness to Pay</p>
-            </div>
-            """.format(avg_willingness), unsafe_allow_html=True)
+            if 'Willingness_to_Pay_AED' in df_filtered.columns:
+                avg_willingness = df_filtered['Willingness_to_Pay_AED'].mean()
+                st.metric("Avg WTP (AED)", f"{avg_willingness:.2f}")
         
         st.markdown("---")
         
@@ -228,15 +263,20 @@ if df is not None:
             st.write("**Missing Values:**", df_filtered.isnull().sum().sum())
             st.write("**Duplicate Rows:**", df_filtered.duplicated().sum())
             
-            st.subheader("📈 Target Distribution")
-            target_counts = df_filtered['Likely_to_Use_ReFillHub'].value_counts()
-            fig = px.pie(
-                values=target_counts.values,
-                names=target_counts.index,
-                title="Likely to Use RefillHub",
-                color_discrete_sequence=['#2c5f2d', '#97be5a', '#e8f5e9']
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            if 'Likely_to_Use_ReFillHub' in df_filtered.columns:
+                st.subheader("📈 Target Distribution")
+                target_counts = df_filtered['Likely_to_Use_ReFillHub'].value_counts()
+                
+                if PLOTLY_AVAILABLE:
+                    fig = px.pie(
+                        values=target_counts.values,
+                        names=target_counts.index,
+                        title="Likely to Use RefillHub",
+                        color_discrete_sequence=['#2c5f2d', '#97be5a', '#e8f5e9']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.bar_chart(target_counts)
         
         # Data Quality Report
         st.markdown("---")
@@ -256,9 +296,9 @@ if df is not None:
             st.write(f"Count: {len(categorical_cols)}")
             st.write(categorical_cols)
     
-    # ============================================================================
+    # ========================================================================
     # 2. EXPLORATORY DATA ANALYSIS
-    # ============================================================================
+    # ========================================================================
     elif choice == "📈 Exploratory Data Analysis":
         st.header("📈 Exploratory Data Analysis")
         
@@ -276,49 +316,52 @@ if df is not None:
             
             with col1:
                 # Age Group distribution
-                fig = px.histogram(
-                    df_filtered,
-                    x='Age_Group',
-                    color='Gender',
-                    title="Age Group Distribution by Gender",
-                    barmode='group',
-                    color_discrete_sequence=['#2c5f2d', '#97be5a', '#c5e1a5']
-                )
-                fig.update_layout(xaxis_title="Age Group", yaxis_title="Count")
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Age_Group' in df_filtered.columns and 'Gender' in df_filtered.columns:
+                    fig = px.histogram(
+                        df_filtered,
+                        x='Age_Group',
+                        color='Gender',
+                        title="Age Group Distribution by Gender",
+                        barmode='group',
+                        color_discrete_sequence=['#2c5f2d', '#97be5a', '#c5e1a5']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Income distribution
-                fig = px.box(
-                    df_filtered,
-                    x='Income',
-                    y='Willingness_to_Pay_AED',
-                    color='Income',
-                    title="Willingness to Pay by Income Level",
-                    color_discrete_sequence=px.colors.sequential.Greens
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Income' in df_filtered.columns and 'Willingness_to_Pay_AED' in df_filtered.columns:
+                    fig = px.box(
+                        df_filtered,
+                        x='Income',
+                        y='Willingness_to_Pay_AED',
+                        color='Income',
+                        title="Willingness to Pay by Income Level",
+                        color_discrete_sequence=px.colors.sequential.Greens
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 # Emirate distribution
-                emirate_counts = df_filtered['Emirate'].value_counts()
-                fig = px.bar(
-                    x=emirate_counts.index,
-                    y=emirate_counts.values,
-                    title="Distribution Across Emirates",
-                    labels={'x': 'Emirate', 'y': 'Count'},
-                    color=emirate_counts.values,
-                    color_continuous_scale='Greens'
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Emirate' in df_filtered.columns:
+                    emirate_counts = df_filtered['Emirate'].value_counts()
+                    fig = px.bar(
+                        x=emirate_counts.index,
+                        y=emirate_counts.values,
+                        title="Distribution Across Emirates",
+                        labels={'x': 'Emirate', 'y': 'Count'},
+                        color=emirate_counts.values,
+                        color_continuous_scale='Greens'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Education level
-                fig = px.pie(
-                    df_filtered,
-                    names='Education',
-                    title="Education Level Distribution",
-                    color_discrete_sequence=px.colors.sequential.Greens
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Education' in df_filtered.columns:
+                    fig = px.pie(
+                        df_filtered,
+                        names='Education',
+                        title="Education Level Distribution",
+                        color_discrete_sequence=px.colors.sequential.Greens
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
         
         with tab2:
             st.subheader("Purchase Behavior Analysis")
@@ -327,52 +370,56 @@ if df is not None:
             
             with col1:
                 # Purchase frequency
-                fig = px.histogram(
-                    df_filtered,
-                    x='Purchase_Frequency',
-                    color='Likely_to_Use_ReFillHub',
-                    title="Purchase Frequency vs Refill Likelihood",
-                    barmode='group',
-                    color_discrete_sequence=['#e74c3c', '#2c5f2d']
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Purchase_Frequency' in df_filtered.columns and 'Likely_to_Use_ReFillHub' in df_filtered.columns:
+                    fig = px.histogram(
+                        df_filtered,
+                        x='Purchase_Frequency',
+                        color='Likely_to_Use_ReFillHub',
+                        title="Purchase Frequency vs Refill Likelihood",
+                        barmode='group',
+                        color_discrete_sequence=['#e74c3c', '#2c5f2d']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Monthly spending
-                fig = px.violin(
-                    df_filtered,
-                    x='Monthly_Spending_Range',
-                    y='Willingness_to_Pay_AED',
-                    color='Monthly_Spending_Range',
-                    title="Willingness to Pay by Monthly Spending",
-                    box=True,
-                    color_discrete_sequence=px.colors.sequential.Greens
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Monthly_Spending_Range' in df_filtered.columns and 'Willingness_to_Pay_AED' in df_filtered.columns:
+                    fig = px.violin(
+                        df_filtered,
+                        x='Monthly_Spending_Range',
+                        y='Willingness_to_Pay_AED',
+                        color='Monthly_Spending_Range',
+                        title="Willingness to Pay by Monthly Spending",
+                        box=True,
+                        color_discrete_sequence=px.colors.sequential.Greens
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 # Purchase location
-                location_counts = df_filtered['Purchase_Location'].value_counts()
-                fig = px.bar(
-                    x=location_counts.index,
-                    y=location_counts.values,
-                    title="Preferred Purchase Locations",
-                    labels={'x': 'Location', 'y': 'Count'},
-                    color=location_counts.values,
-                    color_continuous_scale='Greens'
-                )
-                fig.update_xaxis(tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Purchase_Location' in df_filtered.columns:
+                    location_counts = df_filtered['Purchase_Location'].value_counts()
+                    fig = px.bar(
+                        x=location_counts.index,
+                        y=location_counts.values,
+                        title="Preferred Purchase Locations",
+                        labels={'x': 'Location', 'y': 'Count'},
+                        color=location_counts.values,
+                        color_continuous_scale='Greens'
+                    )
+                    fig.update_xaxes(tickangle=-45)
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Usage frequency
-                fig = px.histogram(
-                    df_filtered,
-                    x='Usage_Frequency',
-                    color='Likely_to_Use_ReFillHub',
-                    title="Usage Frequency Distribution",
-                    barmode='stack',
-                    color_discrete_sequence=['#e74c3c', '#2c5f2d']
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Usage_Frequency' in df_filtered.columns and 'Likely_to_Use_ReFillHub' in df_filtered.columns:
+                    fig = px.histogram(
+                        df_filtered,
+                        x='Usage_Frequency',
+                        color='Likely_to_Use_ReFillHub',
+                        title="Usage Frequency Distribution",
+                        barmode='stack',
+                        color_discrete_sequence=['#e74c3c', '#2c5f2d']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
         
         with tab3:
             st.subheader("Sustainability Metrics")
@@ -381,54 +428,59 @@ if df is not None:
             
             with col1:
                 # Eco product usage
-                eco_counts = df_filtered['Uses_Eco_Products'].value_counts()
-                fig = px.pie(
-                    values=eco_counts.values,
-                    names=eco_counts.index,
-                    title="Eco-Product Usage",
-                    color_discrete_sequence=['#2c5f2d', '#97be5a', '#e8f5e9']
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Uses_Eco_Products' in df_filtered.columns:
+                    eco_counts = df_filtered['Uses_Eco_Products'].value_counts()
+                    fig = px.pie(
+                        values=eco_counts.values,
+                        names=eco_counts.index,
+                        title="Eco-Product Usage",
+                        color_discrete_sequence=['#2c5f2d', '#97be5a', '#e8f5e9']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Importance scores
-                importance_df = pd.DataFrame({
-                    'Factor': ['Convenience', 'Price', 'Sustainability'],
-                    'Average Score': [
-                        df_filtered['Importance_Convenience'].mean(),
-                        df_filtered['Importance_Price'].mean(),
-                        df_filtered['Importance_Sustainability'].mean()
-                    ]
-                })
-                fig = px.bar(
-                    importance_df,
-                    x='Factor',
-                    y='Average Score',
-                    title="Average Importance Scores",
-                    color='Average Score',
-                    color_continuous_scale='Greens'
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                importance_cols = ['Importance_Convenience', 'Importance_Price', 'Importance_Sustainability']
+                if all(col in df_filtered.columns for col in importance_cols):
+                    importance_df = pd.DataFrame({
+                        'Factor': ['Convenience', 'Price', 'Sustainability'],
+                        'Average Score': [
+                            df_filtered['Importance_Convenience'].mean(),
+                            df_filtered['Importance_Price'].mean(),
+                            df_filtered['Importance_Sustainability'].mean()
+                        ]
+                    })
+                    fig = px.bar(
+                        importance_df,
+                        x='Factor',
+                        y='Average Score',
+                        title="Average Importance Scores",
+                        color='Average Score',
+                        color_continuous_scale='Greens'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 # Plastic ban awareness
-                awareness_counts = df_filtered['Aware_Plastic_Ban'].value_counts()
-                fig = px.pie(
-                    values=awareness_counts.values,
-                    names=awareness_counts.index,
-                    title="Plastic Ban Awareness",
-                    color_discrete_sequence=['#2c5f2d', '#97be5a', '#e8f5e9']
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Aware_Plastic_Ban' in df_filtered.columns:
+                    awareness_counts = df_filtered['Aware_Plastic_Ban'].value_counts()
+                    fig = px.pie(
+                        values=awareness_counts.values,
+                        names=awareness_counts.index,
+                        title="Plastic Ban Awareness",
+                        color_discrete_sequence=['#2c5f2d', '#97be5a', '#e8f5e9']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Waste reduction score
-                fig = px.histogram(
-                    df_filtered,
-                    x='Reduce_Waste_Score',
-                    nbins=5,
-                    title="Waste Reduction Score Distribution",
-                    color_discrete_sequence=['#2c5f2d']
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if 'Reduce_Waste_Score' in df_filtered.columns:
+                    fig = px.histogram(
+                        df_filtered,
+                        x='Reduce_Waste_Score',
+                        nbins=5,
+                        title="Waste Reduction Score Distribution",
+                        color_discrete_sequence=['#2c5f2d']
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
         
         with tab4:
             st.subheader("Correlation Analysis")
@@ -436,39 +488,40 @@ if df is not None:
             # Select numerical columns for correlation
             numerical_cols = df_filtered.select_dtypes(include=[np.number]).columns.tolist()
             
-            # Calculate correlation matrix
-            corr_matrix = df_filtered[numerical_cols].corr()
-            
-            # Create heatmap
-            fig = px.imshow(
-                corr_matrix,
-                title="Correlation Heatmap",
-                color_continuous_scale='RdYlGn',
-                aspect='auto',
-                labels=dict(color="Correlation")
-            )
-            fig.update_xaxes(tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Top correlations with target variable
-            st.subheader("Top Correlations with Willingness to Pay")
-            if 'Willingness_to_Pay_AED' in numerical_cols:
-                target_corr = corr_matrix['Willingness_to_Pay_AED'].sort_values(ascending=False)[1:11]
+            if len(numerical_cols) > 1:
+                # Calculate correlation matrix
+                corr_matrix = df_filtered[numerical_cols].corr()
                 
-                fig = px.bar(
-                    x=target_corr.values,
-                    y=target_corr.index,
-                    orientation='h',
-                    title="Top 10 Features Correlated with Willingness to Pay",
-                    labels={'x': 'Correlation Coefficient', 'y': 'Feature'},
-                    color=target_corr.values,
-                    color_continuous_scale='RdYlGn'
+                # Create heatmap
+                fig = px.imshow(
+                    corr_matrix,
+                    title="Correlation Heatmap",
+                    color_continuous_scale='RdYlGn',
+                    aspect='auto',
+                    labels=dict(color="Correlation")
                 )
+                fig.update_xaxes(tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Top correlations with target variable
+                if 'Willingness_to_Pay_AED' in numerical_cols:
+                    st.subheader("Top Correlations with Willingness to Pay")
+                    target_corr = corr_matrix['Willingness_to_Pay_AED'].sort_values(ascending=False)[1:11]
+                    
+                    fig = px.bar(
+                        x=target_corr.values,
+                        y=target_corr.index,
+                        orientation='h',
+                        title="Top 10 Features Correlated with Willingness to Pay",
+                        labels={'x': 'Correlation Coefficient', 'y': 'Feature'},
+                        color=target_corr.values,
+                        color_continuous_scale='RdYlGn'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
     
-    # ============================================================================
+    # ========================================================================
     # 3. CLASSIFICATION MODELS
-    # ============================================================================
+    # ========================================================================
     elif choice == "🎯 Classification Models":
         st.header("🎯 Classification: Predicting RefillHub Usage")
         
@@ -509,53 +562,57 @@ if df is not None:
                 )
                 
                 if st.button("🚀 Train Model(s)", key="train_classification"):
-                    with st.spinner("Training models..."):
+                    with st.spinner("Training models... Please wait."):
                         models = {}
                         results = {}
                         
-                        if model_choice == "Decision Tree" or model_choice == "All Models":
-                            dt = DecisionTreeClassifier(max_depth=10, random_state=42)
-                            dt.fit(X_train, y_train)
-                            models['Decision Tree'] = dt
+                        try:
+                            if model_choice == "Decision Tree" or model_choice == "All Models":
+                                dt = DecisionTreeClassifier(max_depth=10, random_state=42)
+                                dt.fit(X_train, y_train)
+                                models['Decision Tree'] = dt
+                                
+                                y_pred = dt.predict(X_test)
+                                results['Decision Tree'] = {
+                                    'accuracy': accuracy_score(y_test, y_pred),
+                                    'predictions': y_pred,
+                                    'model': dt
+                                }
                             
-                            y_pred = dt.predict(X_test)
-                            results['Decision Tree'] = {
-                                'accuracy': accuracy_score(y_test, y_pred),
-                                'predictions': y_pred,
-                                'model': dt
-                            }
-                        
-                        if model_choice == "Random Forest" or model_choice == "All Models":
-                            rf = RandomForestClassifier(n_estimators=100, random_state=42)
-                            rf.fit(X_train, y_train)
-                            models['Random Forest'] = rf
+                            if model_choice == "Random Forest" or model_choice == "All Models":
+                                rf = RandomForestClassifier(n_estimators=100, random_state=42)
+                                rf.fit(X_train, y_train)
+                                models['Random Forest'] = rf
+                                
+                                y_pred = rf.predict(X_test)
+                                results['Random Forest'] = {
+                                    'accuracy': accuracy_score(y_test, y_pred),
+                                    'predictions': y_pred,
+                                    'model': rf
+                                }
                             
-                            y_pred = rf.predict(X_test)
-                            results['Random Forest'] = {
-                                'accuracy': accuracy_score(y_test, y_pred),
-                                'predictions': y_pred,
-                                'model': rf
-                            }
-                        
-                        if model_choice == "Gradient Boosting" or model_choice == "All Models":
-                            gb = GradientBoostingClassifier(n_estimators=100, random_state=42)
-                            gb.fit(X_train, y_train)
-                            models['Gradient Boosting'] = gb
+                            if model_choice == "Gradient Boosting" or model_choice == "All Models":
+                                gb = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                                gb.fit(X_train, y_train)
+                                models['Gradient Boosting'] = gb
+                                
+                                y_pred = gb.predict(X_test)
+                                results['Gradient Boosting'] = {
+                                    'accuracy': accuracy_score(y_test, y_pred),
+                                    'predictions': y_pred,
+                                    'model': gb
+                                }
                             
-                            y_pred = gb.predict(X_test)
-                            results['Gradient Boosting'] = {
-                                'accuracy': accuracy_score(y_test, y_pred),
-                                'predictions': y_pred,
-                                'model': gb
-                            }
+                            # Store in session state
+                            st.session_state['classification_results'] = results
+                            st.session_state['classification_models'] = models
+                            st.session_state['X_test'] = X_test
+                            st.session_state['y_test'] = y_test
+                            
+                            st.success("✅ Models trained successfully!")
                         
-                        # Store in session state
-                        st.session_state['classification_results'] = results
-                        st.session_state['classification_models'] = models
-                        st.session_state['X_test'] = X_test
-                        st.session_state['y_test'] = y_test
-                        
-                        st.success("✅ Models trained successfully!")
+                        except Exception as e:
+                            st.error(f"Error during training: {e}")
             
             with col2:
                 if 'classification_results' in st.session_state:
@@ -621,7 +678,7 @@ if df is not None:
                         )
                         
                         report_df = pd.DataFrame(report).transpose()
-                        st.dataframe(report_df.style.background_gradient(cmap='Greens'), use_container_width=True)
+                        st.dataframe(report_df, use_container_width=True)
                         st.markdown("---")
                 
                 with tab3:
@@ -648,10 +705,10 @@ if df is not None:
                             st.plotly_chart(fig, use_container_width=True)
                             st.markdown("---")
     
-    # ============================================================================
+    # ========================================================================
     # 4. CUSTOMER SEGMENTATION (CLUSTERING)
-    # ============================================================================
-    elif choice == "🔍 Customer Segmentation (Clustering)":
+    # ========================================================================
+    elif choice == "🔍 Customer Segmentation":
         st.header("🔍 Customer Segmentation using Clustering")
         
         st.markdown("""
@@ -665,10 +722,12 @@ if df is not None:
         """, unsafe_allow_html=True)
         
         # Select features for clustering
+        available_features = [col for col in df_processed.columns if col.endswith('_encoded')]
+        
         cluster_features = st.multiselect(
             "Select features for clustering:",
-            options=[col for col in df_processed.columns if col.endswith('_encoded')],
-            default=[col for col in df_processed.columns if col.endswith('_encoded')][:10]
+            options=available_features,
+            default=available_features[:min(10, len(available_features))]
         )
         
         if cluster_features:
@@ -687,22 +746,25 @@ if df is not None:
                 
                 if st.button("🚀 Perform Clustering", key="run_clustering"):
                     with st.spinner("Performing clustering analysis..."):
-                        # K-Means clustering
-                        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                        clusters = kmeans.fit_predict(X_scaled)
-                        
-                        # Calculate metrics
-                        silhouette = silhouette_score(X_scaled, clusters)
-                        davies_bouldin = davies_bouldin_score(X_scaled, clusters)
-                        
-                        # Store results
-                        st.session_state['clusters'] = clusters
-                        st.session_state['kmeans_model'] = kmeans
-                        st.session_state['X_scaled'] = X_scaled
-                        st.session_state['silhouette'] = silhouette
-                        st.session_state['davies_bouldin'] = davies_bouldin
-                        
-                        st.success("✅ Clustering completed!")
+                        try:
+                            # K-Means clustering
+                            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                            clusters = kmeans.fit_predict(X_scaled)
+                            
+                            # Calculate metrics
+                            silhouette = silhouette_score(X_scaled, clusters)
+                            davies_bouldin = davies_bouldin_score(X_scaled, clusters)
+                            
+                            # Store results
+                            st.session_state['clusters'] = clusters
+                            st.session_state['kmeans_model'] = kmeans
+                            st.session_state['X_scaled'] = X_scaled
+                            st.session_state['silhouette'] = silhouette
+                            st.session_state['davies_bouldin'] = davies_bouldin
+                            
+                            st.success("✅ Clustering completed!")
+                        except Exception as e:
+                            st.error(f"Error during clustering: {e}")
             
             with col2:
                 if 'clusters' in st.session_state:
@@ -796,21 +858,30 @@ if df is not None:
                             with col1:
                                 st.write("**Demographics:**")
                                 st.write(f"Size: {len(cluster_data)} customers")
-                                st.write(f"Dominant Age: {cluster_data['Age_Group'].mode()[0]}")
-                                st.write(f"Dominant Gender: {cluster_data['Gender'].mode()[0]}")
-                                st.write(f"Main Emirate: {cluster_data['Emirate'].mode()[0]}")
+                                if 'Age_Group' in cluster_data.columns:
+                                    st.write(f"Dominant Age: {cluster_data['Age_Group'].mode()[0]}")
+                                if 'Gender' in cluster_data.columns:
+                                    st.write(f"Dominant Gender: {cluster_data['Gender'].mode()[0]}")
+                                if 'Emirate' in cluster_data.columns:
+                                    st.write(f"Main Emirate: {cluster_data['Emirate'].mode()[0]}")
                             
                             with col2:
                                 st.write("**Behavior:**")
-                                st.write(f"Avg WTP: AED {cluster_data['Willingness_to_Pay_AED'].mean():.2f}")
-                                st.write(f"Likely Users: {(cluster_data['Likely_to_Use_ReFillHub']=='Yes').sum()}")
-                                st.write(f"Main Purchase Loc: {cluster_data['Purchase_Location'].mode()[0]}")
+                                if 'Willingness_to_Pay_AED' in cluster_data.columns:
+                                    st.write(f"Avg WTP: AED {cluster_data['Willingness_to_Pay_AED'].mean():.2f}")
+                                if 'Likely_to_Use_ReFillHub' in cluster_data.columns:
+                                    st.write(f"Likely Users: {(cluster_data['Likely_to_Use_ReFillHub']=='Yes').sum()}")
+                                if 'Purchase_Location' in cluster_data.columns:
+                                    st.write(f"Main Purchase Loc: {cluster_data['Purchase_Location'].mode()[0]}")
                             
                             with col3:
                                 st.write("**Preferences:**")
-                                st.write(f"Eco-friendly: {(cluster_data['Uses_Eco_Products']=='Yes').sum()}")
-                                st.write(f"Avg Sustainability Score: {cluster_data['Importance_Sustainability'].mean():.1f}")
-                                st.write(f"Main Payment: {cluster_data['Preferred_Payment_Mode'].mode()[0]}")
+                                if 'Uses_Eco_Products' in cluster_data.columns:
+                                    st.write(f"Eco-friendly: {(cluster_data['Uses_Eco_Products']=='Yes').sum()}")
+                                if 'Importance_Sustainability' in cluster_data.columns:
+                                    st.write(f"Avg Sustainability: {cluster_data['Importance_Sustainability'].mean():.1f}")
+                                if 'Preferred_Payment_Mode' in cluster_data.columns:
+                                    st.write(f"Main Payment: {cluster_data['Preferred_Payment_Mode'].mode()[0]}")
                 
                 with tab3:
                     st.subheader("🎯 Actionable Business Insights")
@@ -818,9 +889,20 @@ if df is not None:
                     for cluster_id in sorted(df_clustered['Cluster'].unique()):
                         cluster_data = df_clustered[df_clustered['Cluster'] == cluster_id]
                         
-                        likely_pct = (cluster_data['Likely_to_Use_ReFillHub']=='Yes').sum() / len(cluster_data) * 100
-                        avg_wtp = cluster_data['Willingness_to_Pay_AED'].mean()
-                        main_location = cluster_data['Purchase_Location'].mode()[0]
+                        if 'Likely_to_Use_ReFillHub' in cluster_data.columns:
+                            likely_pct = (cluster_data['Likely_to_Use_ReFillHub']=='Yes').sum() / len(cluster_data) * 100
+                        else:
+                            likely_pct = 0
+                        
+                        if 'Willingness_to_Pay_AED' in cluster_data.columns:
+                            avg_wtp = cluster_data['Willingness_to_Pay_AED'].mean()
+                        else:
+                            avg_wtp = 0
+                        
+                        if 'Purchase_Location' in cluster_data.columns:
+                            main_location = cluster_data['Purchase_Location'].mode()[0]
+                        else:
+                            main_location = "Unknown"
                         
                         st.markdown(f"""
                         <div style='background-color: white; padding: 15px; border-left: 5px solid #2c5f2d; margin: 10px 0; border-radius: 5px;'>
@@ -839,9 +921,9 @@ if df is not None:
                         </div>
                         """, unsafe_allow_html=True)
     
-    # ============================================================================
+    # ========================================================================
     # 5. ASSOCIATION RULE MINING
-    # ============================================================================
+    # ========================================================================
     elif choice == "🔗 Association Rule Mining":
         st.header("🔗 Association Rule Mining: Product Combinations")
         
@@ -854,6 +936,14 @@ if df is not None:
             </p>
         </div>
         """, unsafe_allow_html=True)
+        
+        if not MLXTEND_AVAILABLE:
+            st.warning("⚠️ MLxtend library not available. Installing...")
+            import subprocess
+            import sys
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "mlxtend"])
+            st.success("✅ Installed! Please refresh the page.")
+            st.stop()
         
         # Parse products bought
         if 'Products_Bought' in df.columns:
@@ -912,8 +1002,9 @@ if df is not None:
                     rules = st.session_state['association_rules']
                     
                     st.metric("Total Rules Found", len(rules))
-                    st.metric("Average Confidence", f"{rules['confidence'].mean():.2%}")
-                    st.metric("Average Lift", f"{rules['lift'].mean():.2f}")
+                    if len(rules) > 0:
+                        st.metric("Average Confidence", f"{rules['confidence'].mean():.2%}")
+                        st.metric("Average Lift", f"{rules['lift'].mean():.2f}")
             
             # Display results
             if 'association_rules' in st.session_state:
@@ -922,86 +1013,85 @@ if df is not None:
                 
                 rules = st.session_state['association_rules']
                 
-                tab1, tab2, tab3 = st.tabs([
-                    "Top Rules",
-                    "Visualizations",
-                    "Business Recommendations"
-                ])
-                
-                with tab1:
-                    st.subheader("Top Association Rules by Lift")
+                if len(rules) > 0:
+                    tab1, tab2, tab3 = st.tabs([
+                        "Top Rules",
+                        "Visualizations",
+                        "Business Recommendations"
+                    ])
                     
-                    # Sort by lift
-                    top_rules = rules.nlargest(20, 'lift')
+                    with tab1:
+                        st.subheader("Top Association Rules by Lift")
+                        
+                        # Sort by lift
+                        top_rules = rules.nlargest(20, 'lift')
+                        
+                        # Display as table
+                        display_cols = ['antecedents', 'consequents', 'support', 'confidence', 'lift']
+                        st.dataframe(top_rules[display_cols], use_container_width=True)
                     
-                    # Display as table
-                    display_cols = ['antecedents', 'consequents', 'support', 'confidence', 'lift']
-                    st.dataframe(
-                        top_rules[display_cols].style.background_gradient(
-                            subset=['confidence', 'lift'],
-                            cmap='Greens'
-                        ),
-                        use_container_width=True
-                    )
-                
-                with tab2:
-                    # Scatter plot
-                    fig = px.scatter(
-                        rules,
-                        x='support',
-                        y='confidence',
-                        size='lift',
-                        color='lift',
-                        hover_data=['antecedents', 'consequents'],
-                        title="Association Rules: Support vs Confidence (sized by Lift)",
-                        color_continuous_scale='Greens'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                    with tab2:
+                        # Scatter plot
+                        fig = px.scatter(
+                            rules,
+                            x='support',
+                            y='confidence',
+                            size='lift',
+                            color='lift',
+                            hover_data=['antecedents', 'consequents'],
+                            title="Association Rules: Support vs Confidence (sized by Lift)",
+                            color_continuous_scale='Greens'
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Top product combinations
+                        st.subheader("Top Product Combinations by Support")
+                        
+                        frequent_itemsets = st.session_state['frequent_itemsets']
+                        top_itemsets = frequent_itemsets.nlargest(15, 'support')
+                        
+                        top_itemsets['items'] = top_itemsets['itemsets'].apply(lambda x: ', '.join(list(x)))
+                        
+                        fig = px.bar(
+                            top_itemsets,
+                            x='support',
+                            y='items',
+                            orientation='h',
+                            title="Most Frequent Product Combinations",
+                            color='support',
+                            color_continuous_scale='Greens'
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
                     
-                    # Top product combinations
-                    st.subheader("Top Product Combinations by Support")
-                    
-                    frequent_itemsets = st.session_state['frequent_itemsets']
-                    top_itemsets = frequent_itemsets.nlargest(15, 'support')
-                    
-                    top_itemsets['items'] = top_itemsets['itemsets'].apply(lambda x: ', '.join(list(x)))
-                    
-                    fig = px.bar(
-                        top_itemsets,
-                        x='support',
-                        y='items',
-                        orientation='h',
-                        title="Most Frequent Product Combinations",
-                        color='support',
-                        color_continuous_scale='Greens'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with tab3:
-                    st.subheader("🎯 Actionable Recommendations")
-                    
-                    # Generate recommendations
-                    top_rules = rules.nlargest(10, 'lift')
-                    
-                    for idx, row in top_rules.iterrows():
-                        st.markdown(f"""
-                        <div style='background-color: white; padding: 15px; border-left: 5px solid #2c5f2d; margin: 10px 0; border-radius: 5px;'>
-                            <h4 style='color: #2c5f2d;'>Bundle Opportunity #{idx+1}</h4>
-                            <p><b>If customers buy:</b> {row['antecedents']}</p>
-                            <p><b>They are likely to buy:</b> {row['consequents']}</p>
-                            <ul>
-                                <li><b>Confidence:</b> {row['confidence']:.1%} of the time</li>
-                                <li><b>Lift:</b> {row['lift']:.2f}x more likely than random</li>
-                                <li><b>Support:</b> {row['support']:.1%} of all transactions</li>
-                            </ul>
-                            <p><b>💡 Action:</b> Create a product bundle or place these items near each other in-store/online</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    with tab3:
+                        st.subheader("🎯 Actionable Recommendations")
+                        
+                        # Generate recommendations
+                        top_rules = rules.nlargest(10, 'lift')
+                        
+                        for idx, row in top_rules.iterrows():
+                            st.markdown(f"""
+                            <div style='background-color: white; padding: 15px; border-left: 5px solid #2c5f2d; margin: 10px 0; border-radius: 5px;'>
+                                <h4 style='color: #2c5f2d;'>Bundle Opportunity #{idx+1}</h4>
+                                <p><b>If customers buy:</b> {row['antecedents']}</p>
+                                <p><b>They are likely to buy:</b> {row['consequents']}</p>
+                                <ul>
+                                    <li><b>Confidence:</b> {row['confidence']:.1%} of the time</li>
+                                    <li><b>Lift:</b> {row['lift']:.2f}x more likely than random</li>
+                                    <li><b>Support:</b> {row['support']:.1%} of all transactions</li>
+                                </ul>
+                                <p><b>💡 Action:</b> Create a product bundle or place these items near each other in-store/online</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                else:
+                    st.info("No association rules found with current parameters. Try adjusting the thresholds.")
+        else:
+            st.warning("'Products_Bought' column not found in dataset.")
     
-    # ============================================================================
+    # ========================================================================
     # 6. WILLINGNESS TO PAY (REGRESSION)
-    # ============================================================================
-    elif choice == "💰 Willingness to Pay (Regression)":
+    # ========================================================================
+    elif choice == "💰 Willingness to Pay":
         st.header("💰 Predicting Willingness to Pay")
         
         st.markdown("""
@@ -1041,69 +1131,73 @@ if df is not None:
                 
                 if st.button("🚀 Train Model(s)", key="train_regression"):
                     with st.spinner("Training models..."):
-                        models = {}
-                        results = {}
+                        try:
+                            models = {}
+                            results = {}
+                            
+                            if model_choice == "Linear Regression" or model_choice == "All Models":
+                                lr = LinearRegression()
+                                lr.fit(X_train, y_train)
+                                models['Linear Regression'] = lr
+                                
+                                y_pred = lr.predict(X_test)
+                                r2 = r2_score(y_test, y_pred)
+                                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                                mae = mean_absolute_error(y_test, y_pred)
+                                
+                                results['Linear Regression'] = {
+                                    'r2': r2,
+                                    'rmse': rmse,
+                                    'mae': mae,
+                                    'predictions': y_pred,
+                                    'model': lr
+                                }
+                            
+                            if model_choice == "Ridge Regression" or model_choice == "All Models":
+                                ridge = Ridge(alpha=1.0)
+                                ridge.fit(X_train, y_train)
+                                models['Ridge Regression'] = ridge
+                                
+                                y_pred = ridge.predict(X_test)
+                                r2 = r2_score(y_test, y_pred)
+                                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                                mae = mean_absolute_error(y_test, y_pred)
+                                
+                                results['Ridge Regression'] = {
+                                    'r2': r2,
+                                    'rmse': rmse,
+                                    'mae': mae,
+                                    'predictions': y_pred,
+                                    'model': ridge
+                                }
+                            
+                            if model_choice == "Lasso Regression" or model_choice == "All Models":
+                                lasso = Lasso(alpha=1.0)
+                                lasso.fit(X_train, y_train)
+                                models['Lasso Regression'] = lasso
+                                
+                                y_pred = lasso.predict(X_test)
+                                r2 = r2_score(y_test, y_pred)
+                                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                                mae = mean_absolute_error(y_test, y_pred)
+                                
+                                results['Lasso Regression'] = {
+                                    'r2': r2,
+                                    'rmse': rmse,
+                                    'mae': mae,
+                                    'predictions': y_pred,
+                                    'model': lasso
+                                }
+                            
+                            # Store in session state
+                            st.session_state['regression_results'] = results
+                            st.session_state['regression_models'] = models
+                            st.session_state['y_test_reg'] = y_test
+                            
+                            st.success("✅ Models trained successfully!")
                         
-                        if model_choice == "Linear Regression" or model_choice == "All Models":
-                            lr = LinearRegression()
-                            lr.fit(X_train, y_train)
-                            models['Linear Regression'] = lr
-                            
-                            y_pred = lr.predict(X_test)
-                            r2 = r2_score(y_test, y_pred)
-                            rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                            mae = np.mean(np.abs(y_test - y_pred))
-                            
-                            results['Linear Regression'] = {
-                                'r2': r2,
-                                'rmse': rmse,
-                                'mae': mae,
-                                'predictions': y_pred,
-                                'model': lr
-                            }
-                        
-                        if model_choice == "Ridge Regression" or model_choice == "All Models":
-                            ridge = Ridge(alpha=1.0)
-                            ridge.fit(X_train, y_train)
-                            models['Ridge Regression'] = ridge
-                            
-                            y_pred = ridge.predict(X_test)
-                            r2 = r2_score(y_test, y_pred)
-                            rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                            mae = np.mean(np.abs(y_test - y_pred))
-                            
-                            results['Ridge Regression'] = {
-                                'r2': r2,
-                                'rmse': rmse,
-                                'mae': mae,
-                                'predictions': y_pred,
-                                'model': ridge
-                            }
-                        
-                        if model_choice == "Lasso Regression" or model_choice == "All Models":
-                            lasso = Lasso(alpha=1.0)
-                            lasso.fit(X_train, y_train)
-                            models['Lasso Regression'] = lasso
-                            
-                            y_pred = lasso.predict(X_test)
-                            r2 = r2_score(y_test, y_pred)
-                            rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                            mae = np.mean(np.abs(y_test - y_pred))
-                            
-                            results['Lasso Regression'] = {
-                                'r2': r2,
-                                'rmse': rmse,
-                                'mae': mae,
-                                'predictions': y_pred,
-                                'model': lasso
-                            }
-                        
-                        # Store in session state
-                        st.session_state['regression_results'] = results
-                        st.session_state['regression_models'] = models
-                        st.session_state['y_test_reg'] = y_test
-                        
-                        st.success("✅ Models trained successfully!")
+                        except Exception as e:
+                            st.error(f"Error during training: {e}")
             
             with col2:
                 if 'regression_results' in st.session_state:
@@ -1119,16 +1213,7 @@ if df is not None:
                         'MAE': [results[m]['mae'] for m in results.keys()]
                     })
                     
-                    st.dataframe(
-                        metrics_df.style.background_gradient(
-                            subset=['R² Score'],
-                            cmap='Greens'
-                        ).background_gradient(
-                            subset=['RMSE', 'MAE'],
-                            cmap='Reds_r'
-                        ),
-                        use_container_width=True
-                    )
+                    st.dataframe(metrics_df, use_container_width=True)
             
             # Detailed results
             if 'regression_results' in st.session_state:
@@ -1234,12 +1319,14 @@ if df is not None:
                             )
                             st.plotly_chart(fig, use_container_width=True)
                             st.markdown("---")
+        else:
+            st.warning("'Willingness_to_Pay_AED' column not found in dataset.")
     
-    # ============================================================================
+    # ========================================================================
     # 7. INTERACTIVE INSIGHTS
-    # ============================================================================
+    # ========================================================================
     elif choice == "📊 Interactive Insights":
-        st.header("📊 Interactive Customer Insights")
+        st.header("📊 Interactive Customer Insights Explorer")
         
         st.markdown("""
         <div style='background-color: #e8f5e9; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
@@ -1256,53 +1343,77 @@ if df is not None:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            selected_age = st.multiselect(
-                "Age Group",
-                options=df['Age_Group'].unique(),
-                default=df['Age_Group'].unique()
-            )
+            if 'Age_Group' in df.columns:
+                selected_age = st.multiselect(
+                    "Age Group",
+                    options=sorted(df['Age_Group'].unique()),
+                    default=sorted(df['Age_Group'].unique())
+                )
+            else:
+                selected_age = []
             
-            selected_gender = st.multiselect(
-                "Gender",
-                options=df['Gender'].unique(),
-                default=df['Gender'].unique()
-            )
+            if 'Gender' in df.columns:
+                selected_gender = st.multiselect(
+                    "Gender",
+                    options=sorted(df['Gender'].unique()),
+                    default=sorted(df['Gender'].unique())
+                )
+            else:
+                selected_gender = []
         
         with col2:
-            selected_income = st.multiselect(
-                "Income Range",
-                options=df['Income'].unique(),
-                default=df['Income'].unique()
-            )
+            if 'Income' in df.columns:
+                selected_income = st.multiselect(
+                    "Income Range",
+                    options=sorted(df['Income'].unique()),
+                    default=sorted(df['Income'].unique())
+                )
+            else:
+                selected_income = []
             
-            selected_education = st.multiselect(
-                "Education",
-                options=df['Education'].unique(),
-                default=df['Education'].unique()
-            )
+            if 'Education' in df.columns:
+                selected_education = st.multiselect(
+                    "Education",
+                    options=sorted(df['Education'].unique()),
+                    default=sorted(df['Education'].unique())
+                )
+            else:
+                selected_education = []
         
         with col3:
-            selected_emirate = st.multiselect(
-                "Emirate",
-                options=df['Emirate'].unique(),
-                default=df['Emirate'].unique()
-            )
+            if 'Emirate' in df.columns:
+                selected_emirate = st.multiselect(
+                    "Emirate",
+                    options=sorted(df['Emirate'].unique()),
+                    default=sorted(df['Emirate'].unique())
+                )
+            else:
+                selected_emirate = []
             
-            uses_eco = st.multiselect(
-                "Uses Eco Products",
-                options=df['Uses_Eco_Products'].unique(),
-                default=df['Uses_Eco_Products'].unique()
-            )
+            if 'Uses_Eco_Products' in df.columns:
+                uses_eco = st.multiselect(
+                    "Uses Eco Products",
+                    options=sorted(df['Uses_Eco_Products'].unique()),
+                    default=sorted(df['Uses_Eco_Products'].unique())
+                )
+            else:
+                uses_eco = []
         
         # Apply filters
-        filtered_data = df[
-            (df['Age_Group'].isin(selected_age)) &
-            (df['Gender'].isin(selected_gender)) &
-            (df['Income'].isin(selected_income)) &
-            (df['Education'].isin(selected_education)) &
-            (df['Emirate'].isin(selected_emirate)) &
-            (df['Uses_Eco_Products'].isin(uses_eco))
-        ]
+        filtered_data = df.copy()
+        
+        if len(selected_age) > 0 and 'Age_Group' in df.columns:
+            filtered_data = filtered_data[filtered_data['Age_Group'].isin(selected_age)]
+        if len(selected_gender) > 0 and 'Gender' in df.columns:
+            filtered_data = filtered_data[filtered_data['Gender'].isin(selected_gender)]
+        if len(selected_income) > 0 and 'Income' in df.columns:
+            filtered_data = filtered_data[filtered_data['Income'].isin(selected_income)]
+        if len(selected_education) > 0 and 'Education' in df.columns:
+            filtered_data = filtered_data[filtered_data['Education'].isin(selected_education)]
+        if len(selected_emirate) > 0 and 'Emirate' in df.columns:
+            filtered_data = filtered_data[filtered_data['Emirate'].isin(selected_emirate)]
+        if len(uses_eco) > 0 and 'Uses_Eco_Products' in df.columns:
+            filtered_data = filtered_data[filtered_data['Uses_Eco_Products'].isin(uses_eco)]
         
         st.markdown("---")
         
@@ -1315,127 +1426,30 @@ if df is not None:
             st.metric("Segment Size", len(filtered_data))
         
         with col2:
-            likely_pct = (filtered_data['Likely_to_Use_ReFillHub']=='Yes').sum() / len(filtered_data) * 100 if len(filtered_data) > 0 else 0
-            st.metric("Likely to Use RefillHub", f"{likely_pct:.1f}%")
+            if 'Likely_to_Use_ReFillHub' in filtered_data.columns:
+                likely_pct = (filtered_data['Likely_to_Use_ReFillHub']=='Yes').sum() / len(filtered_data) * 100 if len(filtered_data) > 0 else 0
+                st.metric("Likely to Use RefillHub", f"{likely_pct:.1f}%")
         
         with col3:
-            avg_wtp = filtered_data['Willingness_to_Pay_AED'].mean() if len(filtered_data) > 0 else 0
-            st.metric("Avg Willingness to Pay", f"AED {avg_wtp:.2f}")
+            if 'Willingness_to_Pay_AED' in filtered_data.columns:
+                avg_wtp = filtered_data['Willingness_to_Pay_AED'].mean() if len(filtered_data) > 0 else 0
+                st.metric("Avg WTP (AED)", f"{avg_wtp:.2f}")
         
         with col4:
-            eco_pct = (filtered_data['Uses_Eco_Products']=='Yes').sum() / len(filtered_data) * 100 if len(filtered_data) > 0 else 0
-            st.metric("Eco-Conscious", f"{eco_pct:.1f}%")
+            if 'Uses_Eco_Products' in filtered_data.columns:
+                eco_pct = (filtered_data['Uses_Eco_Products']=='Yes').sum() / len(filtered_data) * 100 if len(filtered_data) > 0 else 0
+                st.metric("Eco-Conscious", f"{eco_pct:.1f}%")
         
         # Detailed charts
         if len(filtered_data) > 0:
             st.markdown("---")
             
-            tab1, tab2, tab3 = st.tabs([
-                "Behavior Patterns",
-                "Preferences",
-                "Detailed Data"
+            tab1, tab2 = st.tabs([
+                "Detailed Data",
+                "Quick Charts"
             ])
             
             with tab1:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Purchase frequency
-                    freq_counts = filtered_data['Purchase_Frequency'].value_counts()
-                    fig = px.pie(
-                        values=freq_counts.values,
-                        names=freq_counts.index,
-                        title="Purchase Frequency Distribution",
-                        color_discrete_sequence=px.colors.sequential.Greens
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Monthly spending
-                    fig = px.histogram(
-                        filtered_data,
-                        x='Monthly_Spending_Range',
-                        title="Monthly Spending Distribution",
-                        color_discrete_sequence=['#2c5f2d']
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    # Purchase location
-                    loc_counts = filtered_data['Purchase_Location'].value_counts()
-                    fig = px.bar(
-                        x=loc_counts.index,
-                        y=loc_counts.values,
-                        title="Preferred Purchase Locations",
-                        color=loc_counts.values,
-                        color_continuous_scale='Greens'
-                    )
-                    fig.update_xaxes(tickangle=-45)
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Payment mode
-                    payment_counts = filtered_data['Preferred_Payment_Mode'].value_counts()
-                    fig = px.pie(
-                        values=payment_counts.values,
-                        names=payment_counts.index,
-                        title="Payment Mode Preferences",
-                        color_discrete_sequence=px.colors.sequential.Greens
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            with tab2:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Container preference
-                    container_counts = filtered_data['Container_Type'].value_counts()
-                    fig = px.bar(
-                        x=container_counts.index,
-                        y=container_counts.values,
-                        title="Container Type Preferences",
-                        color=container_counts.values,
-                        color_continuous_scale='Greens'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Refill location
-                    refill_loc = filtered_data['Refill_Location'].value_counts()
-                    fig = px.pie(
-                        values=refill_loc.values,
-                        names=refill_loc.index,
-                        title="Preferred Refill Locations",
-                        color_discrete_sequence=px.colors.sequential.Greens
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    # Importance scores
-                    importance_avg = {
-                        'Convenience': filtered_data['Importance_Convenience'].mean(),
-                        'Price': filtered_data['Importance_Price'].mean(),
-                        'Sustainability': filtered_data['Importance_Sustainability'].mean()
-                    }
-                    
-                    fig = px.bar(
-                        x=list(importance_avg.keys()),
-                        y=list(importance_avg.values()),
-                        title="Average Importance Scores",
-                        labels={'x': 'Factor', 'y': 'Score (1-5)'},
-                        color=list(importance_avg.values()),
-                        color_continuous_scale='Greens'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Discount sensitivity
-                    discount_counts = filtered_data['Discount_Switch'].value_counts()
-                    fig = px.pie(
-                        values=discount_counts.values,
-                        names=discount_counts.index,
-                        title="Discount Sensitivity",
-                        color_discrete_sequence=px.colors.sequential.Greens
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            with tab3:
                 st.subheader("Filtered Customer Data")
                 st.dataframe(filtered_data, use_container_width=True)
                 
@@ -1447,12 +1461,37 @@ if df is not None:
                     file_name='filtered_customers.csv',
                     mime='text/csv',
                 )
+            
+            with tab2:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if 'Purchase_Frequency' in filtered_data.columns:
+                        freq_counts = filtered_data['Purchase_Frequency'].value_counts()
+                        fig = px.pie(
+                            values=freq_counts.values,
+                            names=freq_counts.index,
+                            title="Purchase Frequency",
+                            color_discrete_sequence=px.colors.sequential.Greens
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    if 'Preferred_Payment_Mode' in filtered_data.columns:
+                        payment_counts = filtered_data['Preferred_Payment_Mode'].value_counts()
+                        fig = px.pie(
+                            values=payment_counts.values,
+                            names=payment_counts.index,
+                            title="Payment Preferences",
+                            color_discrete_sequence=px.colors.sequential.Greens
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("⚠️ No customers match the selected filters. Please adjust your selections.")
     
-    # ============================================================================
+    # ========================================================================
     # 8. BUSINESS RECOMMENDATIONS
-    # ============================================================================
+    # ========================================================================
     elif choice == "🎯 Business Recommendations":
         st.header("🎯 Data-Driven Business Recommendations")
         
@@ -1467,11 +1506,25 @@ if df is not None:
         
         # Calculate key metrics
         total_customers = len(df)
-        likely_users = len(df[df['Likely_to_Use_ReFillHub'] == 'Yes'])
-        likely_pct = likely_users / total_customers * 100
-        avg_wtp = df['Willingness_to_Pay_AED'].mean()
-        high_wtp = len(df[df['Willingness_to_Pay_AED'] > 100])
-        eco_conscious = len(df[df['Uses_Eco_Products'] == 'Yes'])
+        
+        if 'Likely_to_Use_ReFillHub' in df.columns:
+            likely_users = len(df[df['Likely_to_Use_ReFillHub'] == 'Yes'])
+            likely_pct = likely_users / total_customers * 100
+        else:
+            likely_users = 0
+            likely_pct = 0
+        
+        if 'Willingness_to_Pay_AED' in df.columns:
+            avg_wtp = df['Willingness_to_Pay_AED'].mean()
+            high_wtp = len(df[df['Willingness_to_Pay_AED'] > 100])
+        else:
+            avg_wtp = 0
+            high_wtp = 0
+        
+        if 'Uses_Eco_Products' in df.columns:
+            eco_conscious = len(df[df['Uses_Eco_Products'] == 'Yes'])
+        else:
+            eco_conscious = 0
         
         # Key findings
         st.subheader("📊 Key Findings")
@@ -1491,39 +1544,53 @@ if df is not None:
             </div>
             """, unsafe_allow_html=True)
             
+            age_mode = df['Age_Group'].mode()[0] if 'Age_Group' in df.columns else 'N/A'
+            emirate_mode = df['Emirate'].mode()[0] if 'Emirate' in df.columns else 'N/A'
+            freq_mode = df['Purchase_Frequency'].mode()[0] if 'Purchase_Frequency' in df.columns else 'N/A'
+            
             st.markdown(f"""
             <div style='background-color: white; padding: 20px; border-radius: 10px; margin: 10px 0;'>
                 <h4 style='color: #2c5f2d;'>2️⃣ Customer Profile</h4>
                 <ul style='font-size: 15px;'>
-                    <li>Most common age group: <b>{df['Age_Group'].mode()[0]}</b></li>
-                    <li>Primary emirate: <b>{df['Emirate'].mode()[0]}</b></li>
+                    <li>Most common age group: <b>{age_mode}</b></li>
+                    <li>Primary emirate: <b>{emirate_mode}</b></li>
                     <li>Eco-conscious customers: <b>{eco_conscious:,}</b> ({eco_conscious/total_customers*100:.1f}%)</li>
-                    <li>Most common purchase frequency: <b>{df['Purchase_Frequency'].mode()[0]}</b></li>
+                    <li>Most common purchase frequency: <b>{freq_mode}</b></li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
+            loc_mode = df['Purchase_Location'].mode()[0] if 'Purchase_Location' in df.columns else 'N/A'
+            payment_mode = df['Preferred_Payment_Mode'].mode()[0] if 'Preferred_Payment_Mode' in df.columns else 'N/A'
+            avg_sust = df['Importance_Sustainability'].mean() if 'Importance_Sustainability' in df.columns else 0
+            aware_count = len(df[df['Aware_Plastic_Ban']=='Yes']) if 'Aware_Plastic_Ban' in df.columns else 0
+            
             st.markdown(f"""
             <div style='background-color: white; padding: 20px; border-radius: 10px; margin: 10px 0;'>
                 <h4 style='color: #2c5f2d;'>3️⃣ Behavior Insights</h4>
                 <ul style='font-size: 15px;'>
-                    <li>Top purchase location: <b>{df['Purchase_Location'].mode()[0]}</b></li>
-                    <li>Preferred payment: <b>{df['Preferred_Payment_Mode'].mode()[0]}</b></li>
-                    <li>Average importance of sustainability: <b>{df['Importance_Sustainability'].mean():.1f}/5</b></li>
-                    <li>Plastic ban awareness: <b>{len(df[df['Aware_Plastic_Ban']=='Yes']):,}</b> customers</li>
+                    <li>Top purchase location: <b>{loc_mode}</b></li>
+                    <li>Preferred payment: <b>{payment_mode}</b></li>
+                    <li>Average importance of sustainability: <b>{avg_sust:.1f}/5</b></li>
+                    <li>Plastic ban awareness: <b>{aware_count:,}</b> customers</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
+            
+            container_mode = df['Container_Type'].mode()[0] if 'Container_Type' in df.columns else 'N/A'
+            refill_loc = df['Refill_Location'].mode()[0] if 'Refill_Location' in df.columns else 'N/A'
+            packaging_mode = df['Preferred_Packaging'].mode()[0] if 'Preferred_Packaging' in df.columns else 'N/A'
+            avg_waste = df['Reduce_Waste_Score'].mean() if 'Reduce_Waste_Score' in df.columns else 0
             
             st.markdown(f"""
             <div style='background-color: white; padding: 20px; border-radius: 10px; margin: 10px 0;'>
                 <h4 style='color: #2c5f2d;'>4️⃣ Product Preferences</h4>
                 <ul style='font-size: 15px;'>
-                    <li>Most wanted container type: <b>{df['Container_Type'].mode()[0]}</b></li>
-                    <li>Preferred refill location: <b>{df['Refill_Location'].mode()[0]}</b></li>
-                    <li>Preferred packaging: <b>{df['Preferred_Packaging'].mode()[0]}</b></li>
-                    <li>Average waste reduction score: <b>{df['Reduce_Waste_Score'].mean():.1f}/5</b></li>
+                    <li>Most wanted container type: <b>{container_mode}</b></li>
+                    <li>Preferred refill location: <b>{refill_loc}</b></li>
+                    <li>Preferred packaging: <b>{packaging_mode}</b></li>
+                    <li>Average waste reduction score: <b>{avg_waste:.1f}/5</b></li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -1548,10 +1615,10 @@ if df is not None:
             {
                 "title": "2. Optimize Location Strategy",
                 "priority": "High",
-                "rationale": f"Majority prefer {df['Purchase_Location'].mode()[0]} - align refill stations accordingly",
+                "rationale": f"Majority prefer {loc_mode} - align refill stations accordingly",
                 "actions": [
-                    f"Establish refill hubs in top 3 emirates: {', '.join(df['Emirate'].value_counts().head(3).index.tolist())}",
-                    f"Partner with {df['Purchase_Location'].mode()[0].lower()}s for in-store refill stations",
+                    f"Establish refill hubs in top emirates",
+                    f"Partner with {loc_mode.lower()}s for in-store refill stations",
                     "Create mobile refill units for underserved areas",
                     "Implement online ordering with home delivery option"
                 ],
@@ -1569,42 +1636,6 @@ if df is not None:
                 ],
                 "expected_impact": "25-35% increase in brand loyalty"
             },
-            {
-                "title": "4. Product Bundle Strategy",
-                "priority": "Medium",
-                "rationale": "Association rule mining reveals strong product combinations",
-                "actions": [
-                    "Create 'starter packs' with frequently bought-together items",
-                    "Offer combo discounts (10-20% based on discount sensitivity)",
-                    "Design refill stations to display complementary products together",
-                    "Implement 'customers also bought' recommendations"
-                ],
-                "expected_impact": "20-30% increase in average basket size"
-            },
-            {
-                "title": "5. Digital Payment Integration",
-                "priority": "Medium",
-                "rationale": f"Majority prefer {df['Preferred_Payment_Mode'].mode()[0]} - ensure seamless experience",
-                "actions": [
-                    "Integrate multiple payment options (Card, Mobile App, Subscription)",
-                    "Offer auto-refill subscription services",
-                    "Implement QR code-based contactless payments",
-                    "Create a cashback/rewards program for digital payments"
-                ],
-                "expected_impact": "15-25% increase in transaction conversion"
-            },
-            {
-                "title": "6. Customer Education Program",
-                "priority": "Medium",
-                "rationale": f"{len(df[df['Aware_Plastic_Ban']!='Yes']):,} customers unaware of plastic ban - opportunity for education",
-                "actions": [
-                    "Launch awareness campaigns about plastic regulations",
-                    "Create in-store demonstrations of refill process",
-                    "Develop video tutorials and social media content",
-                    "Partner with influencers for eco-friendly lifestyle promotion"
-                ],
-                "expected_impact": "40-50% increase in brand awareness"
-            }
         ]
         
         for rec in recommendations:
@@ -1627,90 +1658,7 @@ if df is not None:
             </div>
             """, unsafe_allow_html=True)
         
-        # Implementation roadmap
-        st.markdown("---")
-        st.subheader("🗓️ Implementation Roadmap")
-        
-        roadmap = {
-            "Phase 1 (Months 1-3)": [
-                "Launch pilot program in Dubai with 5-10 refill stations",
-                "Implement digital payment and mobile app",
-                "Start customer education campaigns",
-                "Begin data collection and tracking"
-            ],
-            "Phase 2 (Months 4-6)": [
-                "Expand to Abu Dhabi and Sharjah",
-                "Launch product bundle offerings",
-                "Implement loyalty program",
-                "Scale marketing efforts"
-            ],
-            "Phase 3 (Months 7-12)": [
-                "Cover all major emirates",
-                "Launch subscription services",
-                "Implement advanced personalization",
-                "Evaluate and optimize based on data"
-            ]
-        }
-        
-        for phase, tasks in roadmap.items():
-            st.markdown(f"""
-            <div style='background-color: #e8f5e9; padding: 15px; border-radius: 10px; margin: 10px 0;'>
-                <h4 style='color: #2c5f2d;'>{phase}</h4>
-                <ul style='font-size: 15px;'>
-                    {"".join([f"<li>{task}</li>" for task in tasks])}
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Success metrics
-        st.markdown("---")
-        st.subheader("📊 Success Metrics to Track")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("""
-            <div style='background-color: white; padding: 20px; border-radius: 10px;'>
-                <h4 style='color: #2c5f2d;'>Customer Metrics</h4>
-                <ul style='font-size: 14px;'>
-                    <li>Customer acquisition rate</li>
-                    <li>Customer retention rate</li>
-                    <li>Net Promoter Score (NPS)</li>
-                    <li>Customer Lifetime Value</li>
-                    <li>Repeat purchase rate</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("""
-            <div style='background-color: white; padding: 20px; border-radius: 10px;'>
-                <h4 style='color: #2c5f2d;'>Business Metrics</h4>
-                <ul style='font-size: 14px;'>
-                    <li>Revenue per station</li>
-                    <li>Average transaction value</li>
-                    <li>Refill frequency per customer</li>
-                    <li>Product bundle adoption rate</li>
-                    <li>Subscription conversion rate</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown("""
-            <div style='background-color: white; padding: 20px; border-radius: 10px;'>
-                <h4 style='color: #2c5f2d;'>Impact Metrics</h4>
-                <ul style='font-size: 14px;'>
-                    <li>Plastic waste reduced (kg)</li>
-                    <li>Carbon footprint saved</li>
-                    <li>Customer awareness score</li>
-                    <li>Market share growth</li>
-                    <li>Brand sentiment score</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Download report
+        # Download summary
         st.markdown("---")
         st.subheader("📥 Export Analysis")
         
@@ -1744,7 +1692,7 @@ if df is not None:
                     f"{avg_wtp:.2f}",
                     high_wtp,
                     eco_conscious,
-                    len(df[df['Aware_Plastic_Ban']=='Yes'])
+                    aware_count
                 ]
             }
             summary_df = pd.DataFrame(summary_data)
@@ -1758,10 +1706,20 @@ if df is not None:
             )
 
 else:
-    st.error("❌ Unable to load data. Please ensure 'RefillHub_SyntheticSurvey.csv' is in the same directory as this script.")
-    st.info("💡 Tip: Place your CSV file in the same folder and refresh the page.")
+    st.error("❌ Unable to load data. Please ensure 'RefillHub_SyntheticSurvey.csv' is in the same directory.")
+    
+    # File uploader as backup
+    st.info("💡 You can upload your CSV file here:")
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.success("✅ File uploaded successfully!")
+        st.experimental_rerun()
 
-# Footer
+# ============================================================================
+# FOOTER
+# ============================================================================
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; padding: 20px; color: #666;'>
